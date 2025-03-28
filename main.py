@@ -68,7 +68,7 @@ def inverse_radon(sinogram, angles, img_size):
                 if 0 <= x < img_size and 0 <= y < img_size:
                     reconstructed[y, x] += value / len(angles)  # Uśrednienie wartości
 
-    max_val = np.max(reconstructed)
+    max_val = np.max([reconstructed])
     if max_val > 0:
         reconstructed /= max_val  # Normalizacja
 
@@ -79,7 +79,8 @@ def main():
     image = loadImage("Kropka.jpg")
 
     # Ustawienia transformaty Radona
-    angles = np.linspace(0, 180, 180, endpoint=False)
+    step = 1
+    angles = np.linspace(0, 180, int(180/step), endpoint=False)
     num_detectors = 100
     spread = 200
 
