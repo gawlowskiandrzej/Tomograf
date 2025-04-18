@@ -99,7 +99,7 @@ class TomographApp:
         self.step = 4
         self.angles = np.linspace(0, 360, int(360 / self.step), endpoint=False)
 
-        self.slider = tk.Scale(root, from_=4, to=1, orient=tk.HORIZONTAL, label="Krok obrotu (°)", command=self.updateImage)
+        self.slider = tk.Scale(root, from_=4, to=1, orient=tk.HORIZONTAL, label="Krok interaktywny", command=self.updateImage)
         self.slider.set(4)
         self.slider.pack(pady=10)
 
@@ -135,17 +135,22 @@ class TomographApp:
             widget.destroy()
 
         self.sino = []
+        self.sinoParts = []
         self.angles_list = []
+        self.anglesFin = []
 
-        for i in range(1, 5):  # 4 segments from 0 to 360 degrees
+        for i in range(1, 5):
             angles = np.linspace((i - 1) * 90, i * 90, int(90 / self.step), endpoint=False)
             sinogram_part = radon_transform(self.image, angles, self.num_detectors, self.spread)
             self.sino.append(sinogram_part)
             self.angles_list.append(angles)
+            self.sinoParts.append(np.concatenate(self.sino, axis=0))
+            self.anglesFin.append(np.concatenate(self.angles_list, axis=0))
             print(f"Rekonstrukcja dla sinogramu {angles[0]}° do {angles[-1]}°")
+        
 
         fig, ax = plt.subplots(figsize=(4, 4))
-        ax.imshow(self.sino[3], cmap='gray', aspect='auto')
+        ax.imshow(self.sinoParts[3], cmap='gray', aspect='auto')
         ax.axis('off')
 
         self.sinogram_canvas = FigureCanvasTkAgg(fig, master=self.labels[1])
@@ -156,14 +161,12 @@ class TomographApp:
     def showInverseRadon(self):
         if not hasattr(self, 'sino') or not hasattr(self, 'angles_list'):
             self.showSinogram()
-
         self.reconstructedIter = []
-        for sino, angles in zip(self.sino, self.angles_list):
+        for sino, angles in zip(self.sinoParts, self.anglesFin):
             recon = inverse_radon(sino, angles, self.image.shape[0], self.spread)
             self.reconstructedIter.append(recon)
             print(f"Rekonstrukcja dla kątów {angles[0]} do {angles[-1]}")
 
-        # Show last segment (270–360°)
         self.loadImageToLabel(2, self.reconstructedIter[3])
 
 
@@ -181,8 +184,7 @@ class TomographApp:
         num=int(num)
         
         fig, ax = plt.subplots(figsize=(4, 4))
-        self.sino = np.concatenate(self.sino[0:num-1], axis=0)
-        ax.imshow(self.sino, cmap='gray', aspect='auto')
+        ax.imshow(self.sinoParts[num-1], cmap='gray', aspect='auto')
         ax.axis('off')  # opcjonalnie
 
         for widget in self.labels[1].winfo_children():
@@ -192,7 +194,7 @@ class TomographApp:
         self.sinogram_canvas.draw()
         self.sinogram_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
     
-        #self.loadImageToLabel(2, self.reconstructedIter[num-1])
+        self.loadImageToLabel(2, self.reconstructedIter[num-1])
 
 
     def resizeImage(self, obraz, max_width=250, max_height=250):
