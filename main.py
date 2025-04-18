@@ -1,21 +1,8 @@
-#pip install pillow
-#pip install matplotlib
-#pip install opencv-python
-#pip install numpy
-
-
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import tkinter as tk
-from tkinter import messagebox
-from tkinter import filedialog
-from PIL import Image, ImageTk
-import io
 
-
-def loadFile(filename):
+def loadImage(filename):  # Fixed indentation
     file = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
     if file is None:
         raise FileNotFoundError(f"Nie znaleziono pliku: {filename}")
@@ -58,11 +45,11 @@ def radon_transform(image, angles, num_detectors, spread):
             y_d = int(center_y - np.sin(alpha_rad) * (h // 2) - np.cos(alpha_rad) * offset)
 
             points = bresenham_line(x_e, y_e, x_d, y_d)
-            sinogram[i, d] = sum(image[y, x] for x, y in points if 0 <= x < w and 0 <= y < h)
+            sinogram[i, d] = sum([image[y, x] for x, y in points if 0 <= x < w and 0 <= y < h])
 
     return sinogram
 
-def inverse_radon(sinogram, angles, img_size):
+def inverse_radon(sinogram, angles, img_size, spread):
     reconstructed = np.zeros((img_size, img_size))
     center = img_size // 2
 
@@ -70,7 +57,7 @@ def inverse_radon(sinogram, angles, img_size):
         alpha_rad = np.deg2rad(alpha)
         for d in range(sinogram.shape[1]):
             value = sinogram[i, d]
-            offset = (d - sinogram.shape[1] // 2) * 200 / sinogram.shape[1]
+            offset = (d - sinogram.shape[1] // 2) * spread / sinogram.shape[1]
             x_e = int(center + np.cos(alpha_rad) * center + np.sin(alpha_rad) * offset)
             y_e = int(center + np.sin(alpha_rad) * center - np.cos(alpha_rad) * offset)
             x_d = int(center - np.cos(alpha_rad) * center + np.sin(alpha_rad) * offset)
@@ -79,107 +66,44 @@ def inverse_radon(sinogram, angles, img_size):
             points = bresenham_line(x_e, y_e, x_d, y_d)
             for x, y in points:
                 if 0 <= x < img_size and 0 <= y < img_size:
-                    reconstructed[y, x] += value / len(angles)
+                    reconstructed[y, x] += value / len(angles)  # Uśrednienie wartości
 
     max_val = np.max(reconstructed)
     if max_val > 0:
-        reconstructed /= max_val
+        reconstructed /= max_val  # Normalizacja
+
     return reconstructed
 
-class TomographApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Tomograf")
-        self.root.geometry("800x500")
-
-        self.btn_file = tk.Button(root, text="Załaduj obraz", command=self.loadImage)
-        self.btn_file.pack(pady=5)
-
-        self.num_detectors = 100
-        self.spread = 200
-        self.step = 1
-        self.angles = np.linspace(0, 360, int(360 / self.step), endpoint=False)
-
-        self.slider = tk.Scale(root, from_=0, to=10, orient=tk.HORIZONTAL, label="Krok obrotu (°)", command=self.updateImage)
-        self.slider.set(0)
-        self.slider.pack(pady=10)
-
-        self.btn_generate = tk.Button(root, text="Pokaż sinogram", command=self.showSinogram)
-        self.btn_generate.pack(pady=5)
-
-        self.btn_generate = tk.Button(root, text="Pokaż obraz wyjściowy", command=self.showInverseRadon)
-        self.btn_generate.pack(pady=5)
-
-        #Ramka do obrazków
-        self.frame = tk.Frame(root)
-        self.frame.pack()
-
-        titles = ["obraz wejściowy", "sinogram", "obraz wyjściowy"]
-        for i, title in enumerate(titles):
-            title_lbl = tk.Label(self.frame, text=title, font=("Arial", 12, "bold"))
-            title_lbl.grid(row=0, column=i, padx=5, pady=(0, 5))
-
-        self.labels = []
-        for i in range(3):
-            lbl = tk.Label(self.frame, width=250, text="Obraz wejściowy")
-            lbl.grid(row=1, column=i, padx=5, pady=0)
-            self.labels.append(lbl)
-
-    def loadImage(self):
-        filename = filedialog.askopenfilename()
-        self.image = loadFile(filename)
-        self.loadImageToLabel(0, self.image)
-
-    def showSinogram(self):
-        self.sinogram = radon_transform(self.image, self.angles, self.num_detectors, self.spread)
-        self.loadImageToLabel(1, self.sinogram)
-        
-    def showInverseRadon(self):
-        if (self.sinogram is None):
-            self.sinogram = radon_transform(self.image, self.angles, self.num_detectors, self.spread)
-        self.reconstructed = inverse_radon(self.sinogram, self.angles, self.image.shape[0])
-        self.loadImageToLabel(2, self.reconstructed)
-
-    def loadImageToLabel(self, labelNumer, image):
-        image_uint8 = (image * 255).astype(np.uint8)
-        obraz = Image.fromarray(image_uint8)
-        obraz = self.resizeImage(obraz)
-        obrazek_tk = ImageTk.PhotoImage(obraz)
-        label = self.labels[labelNumer]
-        label.configure(image=obrazek_tk)
-        label.image = obrazek_tk
-
-    def updateImage(self,step):
-        slider_value = self.slider.get()  # np. 1, 2, 3, 4
-        max_value = self.slider['to']     # zakładamy np. 4
-        
-        total_rows = self.reconstructed.shape[0]
-        rows_to_show = int(total_rows * slider_value / max_value)
-
-        # Wyświetlamy tylko wycinek obrazu (np. górne rows_to_show wierszy)
-        partial_image = self.reconstructed[:rows_to_show, :]
-
-        # Wyświetlenie obrazu (przykład z matplotlib, dopasuj do swojego GUI)
-        self.loadImageToLabel(2, partial_image)
-
-
-
-    def resizeImage(self, obraz, max_width=250, max_height=250):
-        original_width, original_height = obraz.size
-        width_ratio = max_width / original_width
-        height_ratio = max_height / original_height
-        scale_ratio = min(width_ratio, height_ratio)
-        new_width = int(original_width * scale_ratio)
-        new_height = int(original_height * scale_ratio)
-
-        return obraz.resize((new_width, new_height), Image.LANCZOS)
-
-
-
 def main():
-    root = tk.Tk()
-    app = TomographApp(root)
-    root.mainloop()
+    # Wczytanie obrazu
+    image = loadImage("Shepp_logan.jpg")
+    step = 3
+    # Ustawienia transformaty Radona
+    angles = np.linspace(0, 360, int(360/step), endpoint=False)
+    num_detectors = 600
+    spread = image.shape[0]  # Odległość między detektorami
+
+    # Obliczenie sinogramu
+    sinogram = radon_transform(image, angles, num_detectors, spread)
+
+    # Odwrotna transformata Radona
+    reconstructed_image = inverse_radon(sinogram, angles, image.shape[0], spread)
+
+    # Wizualizacja wyników
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+    ax[0].imshow(image, cmap="gray")
+    ax[0].set_title("Obraz wejściowy")
+    ax[0].axis("off")
+
+    ax[1].imshow(sinogram, cmap="gray", aspect='auto')
+    ax[1].set_title("Sinogram")
+    ax[1].axis("off")
+
+    ax[2].imshow(reconstructed_image, cmap="gray")
+    ax[2].set_title("Odwrotna Transformata Radona")
+    ax[2].axis("off")
+
+    plt.show()
 
 if __name__ == "__main__":
     main()
