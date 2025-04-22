@@ -90,15 +90,42 @@ def inverse_radon(sinogram, angles, img_size, spread):
         reconstructed /= max_val
     return reconstructed
 
+def create_filter_kernel(size=21):
+    kernel = np.zeros(size)
+    center = size // 2
+    for k in range(-center, center + 1):
+        if k == 0:
+            kernel[k + center] = 1
+        elif k % 2 == 0:
+            kernel[k + center] = 0
+        else:
+            kernel[k + center] = -4 / (np.pi ** 2 * k ** 2)
+    return kernel
+
+def apply_filter_to_sinogram(sinogram, kernel):
+    filtered_sino = np.zeros_like(sinogram)
+    for i in range(sinogram.shape[0]):
+        filtered_sino[i, :] = np.convolve(sinogram[i, :], kernel, mode='same')
+    return filtered_sino
+
+def compute_rmse(original, reconstructed):
+    mask = (original > 0) | (reconstructed > 0)
+    diff = original[mask] - reconstructed[mask]
+    return np.sqrt(np.mean(diff ** 2))
 
 class TomographApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Tomograf")
-        self.root.geometry("1000x831")
+        self.root.geometry("1000x813")
 
         self.num_detectors = tk.IntVar(value=700)
         self.step = tk.IntVar(value=4)
+        
+        self.invradonFilter = None
+        self.sinoFilter = None
+        self.Filter = False
+        self.rmse = tk.StringVar(value="0.0")
 
         # Nowa ramka na przyciski w jednej linii
         self.buttons_frame = tk.Frame(root)
@@ -112,6 +139,12 @@ class TomographApp:
 
         self.btn_recon = tk.Button(self.buttons_frame, text="Pokaż obraz wyjściowy", command=self.showInverseRadon)
         self.btn_recon.grid(row=0, column=2, padx=5)
+
+        self.btn_recon = tk.Button(self.buttons_frame, text="Pokaż z filtrem", command=self.showFilter)
+        self.btn_recon.grid(row=0, column=3, padx=5)
+
+        tk.Label(self.buttons_frame, text="RMSE").grid(row=0, column=4, sticky="w")
+        tk.Label(self.buttons_frame, textvariable=self.rmse).grid(row=0, column=5, sticky="w")
 
         self.input_frame = tk.Frame(root)
         self.input_frame.pack(pady=5)
@@ -186,6 +219,7 @@ class TomographApp:
             self.anglesFin.append(np.concatenate(self.angles_list, axis=0))
             print(f"Rekonstrukcja dla sinogramu {angles[0]}° do {angles[-1]}°")
 
+        self.sinoFilter = apply_filter_to_sinogram(self.sinoParts[3], create_filter_kernel(21))
         fig, ax = plt.subplots(figsize=(4, 4))
         ax.imshow(self.sinoParts[3], cmap='gray', aspect='auto')
         ax.axis('off')
@@ -194,6 +228,7 @@ class TomographApp:
         self.sinogram_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
     def showInverseRadon(self):
+        
         if not hasattr(self, 'sino') or not hasattr(self, 'angles_list'):
             self.showSinogram()
         self.reconstructedIter = []
@@ -201,7 +236,11 @@ class TomographApp:
             recon = inverse_radon(sino, angles, self.image.shape[0], self.spread)
             self.reconstructedIter.append(recon)
             print(f"Rekonstrukcja dla kątów {angles[0]} do {angles[-1]}")
+        print(f"Rekonsturkcja z filtrem")
+        self.invradonFilter = inverse_radon(self.sinoFilter, self.anglesFin[-1], self.image.shape[0], self.spread)
+        self.rmse.set(compute_rmse(self.image, self.reconstructedIter[3]))
         self.loadImageToLabel(2, self.reconstructedIter[3])
+        self.Filter = False
 
     def updateImage(self, num):
         if hasattr(self, 'sino') or hasattr(self, 'sinoParts'):
@@ -233,6 +272,22 @@ class TomographApp:
         new_width = int(original_width * scale_ratio)
         new_height = int(original_height * scale_ratio)
         return obraz.resize((new_width, new_height), Image.LANCZOS)
+    
+    def showFilter(self):
+        if hasattr(self, 'sino') or hasattr(self, 'sinoParts'):
+            fig, ax = plt.subplots(figsize=(4, 4))
+            ax.imshow(self.sinoFilter, cmap='gray', aspect='auto')
+            ax.axis('off')
+            for widget in self.labels[1].winfo_children():
+                widget.destroy()
+            self.sinogram_canvas = FigureCanvasTkAgg(fig, master=self.labels[1])
+            self.sinogram_canvas.draw()
+            self.sinogram_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+            self.rmse.set(compute_rmse(self.image, self.invradonFilter))
+            self.loadImageToLabel(2, self.invradonFilter)
+            self.Filter = True
+        else:
+            messagebox.showerror("Błąd", "Wygeneruj najpierw sinogram")
 
     def saveAsDicom(self):
         if not hasattr(self, 'reconstructedIter'):
@@ -249,8 +304,11 @@ class TomographApp:
             "ImageComments": self.image_comments_var.get() or "",
             "StudyDate": self.study_date_var.get() or datetime.datetime.now().strftime("%Y%m%d")
         }
-
-        image_to_save = self.reconstructedIter[int(self.slider.get()) - 1]
+        image_to_save = None
+        if self.Filter:
+            image_to_save = self.invradonFilter
+        else:
+            image_to_save = self.reconstructedIter[int(self.slider.get()) - 1]
         self._save_dicom_file(file_path, image_to_save, patient_data)
         messagebox.showinfo("Sukces", f"Obraz zapisany jako DICOM: {file_path}")
 

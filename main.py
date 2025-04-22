@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-def loadImage(filename):  # Fixed indentation
+def loadImage(filename):
     file = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
     if file is None:
         raise FileNotFoundError(f"Nie znaleziono pliku: {filename}")
@@ -49,6 +49,24 @@ def radon_transform(image, angles, num_detectors, spread):
 
     return sinogram
 
+def create_filter_kernel(size=21):
+    kernel = np.zeros(size)
+    center = size // 2
+    for k in range(-center, center + 1):
+        if k == 0:
+            kernel[k + center] = 1
+        elif k % 2 == 0:
+            kernel[k + center] = 0
+        else:
+            kernel[k + center] = -4 / (np.pi ** 2 * k ** 2)
+    return kernel
+
+def apply_filter_to_sinogram(sinogram, kernel):
+    filtered_sino = np.zeros_like(sinogram)
+    for i in range(sinogram.shape[0]):
+        filtered_sino[i, :] = np.convolve(sinogram[i, :], kernel, mode='same')
+    return filtered_sino
+
 def inverse_radon(sinogram, angles, img_size, spread):
     reconstructed = np.zeros((img_size, img_size))
     center = img_size // 2
@@ -66,42 +84,62 @@ def inverse_radon(sinogram, angles, img_size, spread):
             points = bresenham_line(x_e, y_e, x_d, y_d)
             for x, y in points:
                 if 0 <= x < img_size and 0 <= y < img_size:
-                    reconstructed[y, x] += value / len(angles)  # Uśrednienie wartości
+                    reconstructed[y, x] += value / len(angles)
 
     max_val = np.max(reconstructed)
     if max_val > 0:
-        reconstructed /= max_val  # Normalizacja
+        reconstructed /= max_val
 
     return reconstructed
 
-def main():
-    # Wczytanie obrazu
-    image = loadImage("Shepp_logan.jpg")
-    step = 3
-    # Ustawienia transformaty Radona
-    angles = np.linspace(0, 360, int(360/step), endpoint=False)
-    num_detectors = 600
-    spread = image.shape[0]  # Odległość między detektorami
+def compute_rmse(original, reconstructed):
+    mask = (original > 0) | (reconstructed > 0)
+    diff = original[mask] - reconstructed[mask]
+    return np.sqrt(np.mean(diff ** 2))
 
-    # Obliczenie sinogramu
+def main():
+    image = loadImage("Shepp_logan.jpg")
+    step = 1
+    angles = np.linspace(0, 360, int(360 / step), endpoint=False)
+    num_detectors = 300
+    spread = image.shape[0]
+
     sinogram = radon_transform(image, angles, num_detectors, spread)
 
-    # Odwrotna transformata Radona
-    reconstructed_image = inverse_radon(sinogram, angles, image.shape[0], spread)
+    # Stworzenie i zastosowanie filtra
+    kernel = create_filter_kernel(21)
+    filtered_sinogram = apply_filter_to_sinogram(sinogram, kernel)
 
-    # Wizualizacja wyników
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+    # Odtworzenie obrazu z przefiltrowanego sinogramu
+    reconstructed_image = inverse_radon(sinogram, angles, image.shape[0], spread)
+    reconstructed_image2 = inverse_radon(filtered_sinogram, angles, image.shape[0], spread)
+
+    # Obliczenie RMSE
+    rmse = compute_rmse(image, reconstructed_image)
+    print(f"RMSE: {rmse:.4f}")
+
+    # Wizualizacja
+    fig, ax = plt.subplots(1, 5, figsize=(15, 5))
     ax[0].imshow(image, cmap="gray")
     ax[0].set_title("Obraz wejściowy")
     ax[0].axis("off")
 
     ax[1].imshow(sinogram, cmap="gray", aspect='auto')
-    ax[1].set_title("Sinogram")
+    ax[1].set_title("Filtrowany Sinogram")
     ax[1].axis("off")
 
-    ax[2].imshow(reconstructed_image, cmap="gray")
-    ax[2].set_title("Odwrotna Transformata Radona")
+
+    ax[2].imshow(filtered_sinogram, cmap="gray", aspect='auto')
+    ax[2].set_title("Filtrowany Sinogram")
     ax[2].axis("off")
+
+    ax[3].imshow(reconstructed_image, cmap="gray")
+    ax[3].set_title("Odtworzony Obraz")
+    ax[3].axis("off")
+
+    ax[4].imshow(reconstructed_image2, cmap="gray")
+    ax[4].set_title("Odtworzony Obraz")
+    ax[4].axis("off")
 
     plt.show()
 
