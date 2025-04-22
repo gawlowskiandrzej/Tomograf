@@ -178,8 +178,8 @@ class TomographApp:
         self.anglesFin = []
 
         for i in range(1, 5):
-            angles = np.linspace((i - 1) * 90, i * 90, int(90 / self.step), endpoint=False)
-            sinogram_part = radon_transform(self.image, angles, self.num_detectors, self.spread)
+            angles = np.linspace((i - 1) * 90, i * 90, int(90 / self.step.get()), endpoint=False)
+            sinogram_part = radon_transform(self.image, angles, self.num_detectors.get(), self.spread)
             self.sino.append(sinogram_part)
             self.angles_list.append(angles)
             self.sinoParts.append(np.concatenate(self.sino, axis=0))
