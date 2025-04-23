@@ -196,8 +196,22 @@ class TomographApp:
             self.labels.append(lbl)
 
     def loadImage(self):
-        filename = filedialog.askopenfilename()
-        self.image = loadFile(filename)
+        filename = filedialog.askopenfilename(filetypes=[
+            ("Obrazy", "*.png *.jpg *.jpeg *.bmp *.dcm"),
+            ("Wszystkie pliki", "*.*")
+        ])
+        if not filename:
+            return
+
+        if filename.lower().endswith(".dcm"):
+            ds = pydicom.dcmread(filename)
+            pixel_array = ds.pixel_array.astype(np.float32)
+            pixel_array -= np.min(pixel_array)
+            pixel_array /= np.max(pixel_array)
+            self.image = pixel_array
+        else:
+            self.image = loadFile(filename)
+
         self.spread = self.image.shape[0]
         self.loadImageToLabel(0, self.image)
 
@@ -228,7 +242,6 @@ class TomographApp:
         self.sinogram_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
     def showInverseRadon(self):
-        
         if not hasattr(self, 'sino') or not hasattr(self, 'angles_list'):
             self.showSinogram()
         self.reconstructedIter = []
@@ -353,6 +366,7 @@ class TomographApp:
 
         ds.PixelData = img_converted.tobytes()
         ds.save_as(file_name, write_like_original=False)
+
 
 
 def main():
